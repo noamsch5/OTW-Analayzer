@@ -34,34 +34,46 @@ def get_youtube_client() -> Optional[object]:
         logger.error(f"Failed to initialize YouTube client: {str(e)}")
         return None
 
-def find_similar_tracks(genre: str, track_features: Dict = None) -> List[Dict]:
-    """Find similar tracks on YouTube based on genre and track features"""
+def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
+    """Find similar tracks on YouTube based on track features"""
     try:
         youtube = get_youtube_client()
         if not youtube:
             return []
         
-        # Create search query based on genre and features
-        search_query = f"{genre} music"
-        if track_features:
-            if track_features.get('bpm'):
-                search_query += f" {track_features['bpm']}bpm"
-            if track_features.get('key'):
-                search_query += f" {track_features['key']}"
+        # Create dynamic search query
+        search_query = f"{genre} {track_features['bpm']}bpm"
+        if 'key' in track_features:
+            search_query += f" {track_features['key']}"
         
+        # Search for tracks
         search_response = youtube.search().list(
             q=search_query,
-            part='snippet',
-            maxResults=5,
-            type='video'
+            part='snippet,statistics',
+            maxResults=8,
+            type='video',
+            videoEmbeddable='true',
+            videoCategoryId='10'  # Music category
         ).execute()
+        
+        # Get video details
+        video_ids = [item['id']['videoId'] for item in search_response['items']]
+        videos_response = youtube.videos().list(
+            part='statistics,contentDetails',
+            id=','.join(video_ids)
+        ).execute()
+        
+        # Combine search and video details
+        video_stats = {v['id']: v['statistics'] for v in videos_response['items']}
         
         return [{
             'title': item['snippet']['title'],
             'channel': item['snippet']['channelTitle'],
             'url': f"https://youtube.com/watch?v={item['id']['videoId']}",
-            'thumbnail': item['snippet']['thumbnails']['medium']['url']
-        } for item in search_response.get('items', [])]
+            'thumbnail': item['snippet']['thumbnails']['medium']['url'],
+            'views': video_stats[item['id']['videoId']]['viewCount'],
+            'likes': video_stats[item['id']['videoId']].get('likeCount', '0')
+        } for item in search_response['items']]
         
     except Exception as e:
         st.error(f"YouTube API error: {str(e)}")

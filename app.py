@@ -3,6 +3,7 @@ import os
 import logging
 from src.api.youtube import find_similar_tracks
 from src.api.youtube_seo import generate_seo_tags
+from src.audio.analyzer import analyze_audio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,16 +17,16 @@ def process_audio_file(file):
         with open("temp.wav", "wb") as f:
             f.write(file.getbuffer())
         
-        # Placeholder for actual audio analysis
+        # Analyze audio
+        audio_features = analyze_audio("temp.wav")
+        
+        # Combine with file info
         track_features = {
             "name": file.name.replace(".wav", ""),
-            "genre": "Future House",  # This would be detected
-            "bpm": "128",
-            "key": "F# Minor",
-            "energy": "High"
+            **audio_features
         }
         
-        logger.info("Audio analysis complete")
+        logger.info(f"Audio analysis complete: {track_features}")
         return track_features
         
     except Exception as e:

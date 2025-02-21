@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import logging
 from src.api.youtube import find_similar_tracks
-from src.seo.youtube_seo import generate_seo_tags
+from src.api.youtube_seo import generate_seo_tags
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

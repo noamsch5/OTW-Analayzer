@@ -3,7 +3,7 @@ import os
 import logging
 from src.api.youtube import find_similar_tracks
 from src.api.youtube_seo import generate_seo_tags
-from src.audio.analyzer import analyze_audio
+from src.Audio.analyzer import analyze_audio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

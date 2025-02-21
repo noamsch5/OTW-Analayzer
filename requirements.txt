@@ -1,7 +1,19 @@
+# Core dependencies
 streamlit==1.31.1
 python-dotenv==1.0.0
+
+# Google API
 google-api-python-client==2.108.0
+google-auth-httplib2==0.1.1
+google-auth-oauthlib==1.1.0
+
+# Audio processing (minimal)
 librosa==0.10.1
+soundfile==0.12.1
+
+# Scientific computing
 numpy==1.24.3
 scipy==1.11.3
-pandas==2.1.4
+
+# Machine learning (core)
+scikit-learn==1.4.0

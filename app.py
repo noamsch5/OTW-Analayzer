@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import logging
 from src.api.youtube import find_similar_tracks
+from src.seo.youtube_seo import generate_seo_tags
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +16,7 @@ def process_audio_file(file):
         with open("temp.wav", "wb") as f:
             f.write(file.getbuffer())
         logger.info("Audio file saved successfully")
-        return "Future House"  # Placeholder genre
+        return "Future House"  # Enhanced genre detection coming soon
     except Exception as e:
         logger.error(f"Error processing audio file: {str(e)}")
         raise
@@ -50,6 +51,10 @@ def main():
         st.title("🎵 OTW Analayzer")
         st.subheader("EDM Track Analysis & YouTube Optimization")
         
+        # Add track name input
+        track_name = st.text_input("Track Name (optional)", 
+                                 help="Enter your track name for personalized SEO recommendations")
+        
         uploaded_file = st.file_uploader(
             "Drop your track here",
             type=['wav'],
@@ -62,7 +67,7 @@ def main():
                     genre = process_audio_file(uploaded_file)
                     
                     # Create tabs for results
-                    tab1, tab2 = st.tabs(["Analysis", "Similar Tracks"])
+                    tab1, tab2, tab3 = st.tabs(["Analysis", "Similar Tracks", "YouTube SEO"])
                     
                     with tab1:
                         st.success("Analysis complete!")
@@ -74,11 +79,43 @@ def main():
                     
                     with tab2:
                         similar_tracks = find_similar_tracks(genre)
+                        st.subheader("Similar Tracks on YouTube")
                         for track in similar_tracks[:5]:
                             with st.container():
                                 st.write(f"#### {track['title']}")
                                 st.caption(f"Channel: {track['channel']}")
                                 st.divider()
+                    
+                    with tab3:
+                        seo_data = generate_seo_tags(genre, track_name)
+                        
+                        st.subheader("📈 YouTube SEO Optimization")
+                        
+                        # Title suggestions
+                        st.write("### 🎯 Title Suggestions")
+                        for title in seo_data["title_suggestions"]:
+                            st.info(title)
+                        
+                        # Keywords
+                        st.write("### 🔑 Recommended Keywords")
+                        keywords_md = ", ".join([f"`{k}`" for k in seo_data["keywords"]])
+                        st.markdown(keywords_md)
+                        
+                        # Description template
+                        st.write("### 📝 Description Template")
+                        st.text_area("Copy this description:", 
+                                   value=seo_data["description"],
+                                   height=200)
+                        
+                        # Best upload times
+                        st.write("### ⏰ Best Upload Times")
+                        for time in seo_data["best_upload_times"]:
+                            st.write(f"- {time}")
+                        
+                        # Thumbnail tips
+                        st.write("### 🖼️ Thumbnail Tips")
+                        for tip in seo_data["thumbnail_tips"]:
+                            st.write(f"- {tip}")
             
             except Exception as e:
                 st.error("Error processing file. Please try again.")
@@ -86,7 +123,7 @@ def main():
     
     with col2:
         st.info("💡 Pro tip: Use high-quality WAV files for best results")
-        st.info("✨ Coming soon: Extended genre detection!")
+        st.info("✨ Coming soon: More genre detection!")
 
     # Footer
     st.markdown("---")

@@ -35,46 +35,68 @@ def get_youtube_client() -> Optional[object]:
         return None
 
 def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
-    """Find similar tracks on YouTube based on track features"""
+    """Find similar tracks with enhanced matching"""
     try:
         youtube = get_youtube_client()
         if not youtube:
             return []
         
-        # Create dynamic search query
-        search_query = f"{genre} {track_features['bpm']}bpm"
-        if 'key' in track_features:
-            search_query += f" {track_features['key']}"
+        # Create targeted search query
+        search_query = (
+            f"{genre} {track_features['bpm']}bpm "
+            f"{track_features['key']} music"
+        )
         
-        # Search for tracks
         search_response = youtube.search().list(
             q=search_query,
-            part='snippet,statistics',
-            maxResults=8,
+            part='snippet',
+            maxResults=5,
             type='video',
+            videoCategoryId='10',  # Music category
             videoEmbeddable='true',
-            videoCategoryId='10'  # Music category
+            order='relevance'
         ).execute()
         
-        # Get video details
+        # Get video IDs
         video_ids = [item['id']['videoId'] for item in search_response['items']]
+        
+        # Get detailed video information
         videos_response = youtube.videos().list(
             part='statistics,contentDetails',
             id=','.join(video_ids)
         ).execute()
         
-        # Combine search and video details
-        video_stats = {v['id']: v['statistics'] for v in videos_response['items']}
+        # Combine search results with video details
+        video_details = {v['id']: v for v in videos_response['items']}
         
-        return [{
-            'title': item['snippet']['title'],
-            'channel': item['snippet']['channelTitle'],
-            'url': f"https://youtube.com/watch?v={item['id']['videoId']}",
-            'thumbnail': item['snippet']['thumbnails']['medium']['url'],
-            'views': video_stats[item['id']['videoId']]['viewCount'],
-            'likes': video_stats[item['id']['videoId']].get('likeCount', '0')
-        } for item in search_response['items']]
+        similar_tracks = []
+        for item in search_response['items']:
+            video_id = item['id']['videoId']
+            if video_id in video_details:
+                stats = video_details[video_id]['statistics']
+                similar_tracks.append({
+                    'title': item['snippet']['title'],
+                    'channel': item['snippet']['channelTitle'],
+                    'url': f"https://youtube.com/watch?v={video_id}",
+                    'thumbnail': item['snippet']['thumbnails']['medium']['url'],
+                    'views': int(stats.get('viewCount', 0)),
+                    'likes': int(stats.get('likeCount', 0)),
+                    'engagement': calculate_engagement(stats)
+                })
+        
+        return sorted(similar_tracks, key=lambda x: x['engagement'], reverse=True)
         
     except Exception as e:
         st.error(f"YouTube API error: {str(e)}")
         return []
+
+def calculate_engagement(stats: Dict) -> float:
+    """Calculate engagement score"""
+    views = int(stats.get('viewCount', 0))
+    likes = int(stats.get('likeCount', 0))
+    comments = int(stats.get('commentCount', 0))
+    
+    if views == 0:
+        return 0
+        
+    return (likes + comments * 2) / views

@@ -8,6 +8,8 @@ google-auth-oauthlib==1.1.0
 
 # Audio processing
 librosa==0.10.1
+soundfile==0.12.1
+audioread==3.0.1
 
 # Scientific computing
 numpy==1.24.3

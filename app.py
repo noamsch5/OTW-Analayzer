@@ -3,6 +3,7 @@ import os
 import logging
 from src.api.youtube import find_similar_tracks
 from src.api.youtube_seo import generate_seo_tags
+from src.api.keyword_analyzer import analyze_keywords
 from src.Audio.analyzer import analyze_audio
 
 # Configure logging
@@ -52,8 +53,12 @@ def main():
                 track_features = process_audio_file(uploaded_file)
                 genre = track_features["genre"]
                 
+                # Analyze keywords
+                with st.spinner("Analyzing YouTube keywords..."):
+                    keyword_data = analyze_keywords(genre, track_features)
+                
                 # Create tabs for different analyses
-                tab1, tab2, tab3 = st.tabs(["Analysis", "Similar Tracks", "YouTube SEO"])
+                tab1, tab2, tab3, tab4 = st.tabs(["Analysis", "Similar Tracks", "YouTube SEO", "Keyword Rankings"])
                 
                 with tab1:
                     st.success("Analysis complete!")
@@ -75,6 +80,7 @@ def main():
                             with col6:
                                 st.markdown(f"#### [{track['title']}]({track['url']})")
                                 st.caption(f"Channel: {track['channel']}")
+                                st.caption(f"👀 {track['views']:,} views | 👍 {track['likes']:,} likes")
                 
                 with tab3:
                     seo_data = generate_seo_tags(genre, track_features)
@@ -100,10 +106,29 @@ def main():
                         st.write("### 🖼️ Thumbnail Tips")
                         for tip in seo_data["thumbnail_tips"]:
                             st.write(f"• {tip}")
+                
+                with tab4:
+                    st.subheader("🎯 Keyword Analysis")
+                    
+                    # Display keyword rankings
+                    for keyword, stats in keyword_data.items():
+                        with st.container():
+                            col9, col10, col11 = st.columns([3, 1, 1])
+                            with col9:
+                                st.markdown(f"### `{keyword}`")
+                            with col10:
+                                score_color = "green" if stats['score'] > 0.7 else "orange" if stats['score'] > 0.5 else "red"
+                                st.markdown(f"Score: <span style='color:{score_color}'>{stats['score']:.2f}</span>", unsafe_allow_html=True)
+                            with col11:
+                                competition_color = "green" if stats['competition'] == "Low" else "orange" if stats['competition'] == "Medium" else "red"
+                                st.markdown(f"Competition: <span style='color:{competition_color}'>{stats['competition']}</span>", unsafe_allow_html=True)
+                            st.caption(f"Monthly Searches: {stats['monthly_searches']}")
+                            st.divider()
     
     with col2:
         st.info("💡 Pro tip: Use high-quality WAV files for best results")
         st.info("✨ Upload during recommended times for better reach")
+        st.info("🎯 Focus on keywords with high scores and low competition")
 
     st.markdown("---")
     st.markdown("Made with ❤️ for EDM producers")

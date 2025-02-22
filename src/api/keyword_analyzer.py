@@ -1,6 +1,6 @@
 from googleapiclient.discovery import build
 import streamlit as st
-from typing import Dict, List
+from typing import Dict, List, Optional
 import time
 import json
 import os
@@ -204,46 +204,73 @@ def sort_keywords(keyword_stats: Dict) -> Dict:
         reverse=True
     ))
 
-async def analyze_keyword_realtime(keyword: str) -> Dict:
-    """Analyze keyword in real-time"""
+def analyze_keyword_realtime(keyword: str) -> Optional[Dict]:
+    """Analyze a single keyword in real-time"""
     try:
+        # Check cache first
+        cache_key = f"realtime_{keyword}"
+        cached_data = get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+
         youtube = build('youtube', 'v3', developerKey=st.secrets["YOUTUBE_API_KEY"])
         
-        # Search for the keyword
+        # Search for videos with this keyword
         search_response = youtube.search().list(
             q=keyword,
             part='snippet',
             type='video',
-            videoCategoryId='10',
-            maxResults=5
+            videoCategoryId='10',  # Music category
+            maxResults=5,
+            regionCode='US'
         ).execute()
         
         total_results = search_response['pageInfo']['totalResults']
         
-        # Get video stats
-        if search_response['items']:
-            video_ids = [item['id']['videoId'] for item in search_response['items']]
+        # Get video statistics
+        video_ids = [item['id']['videoId'] for item in search_response['items']]
+        if video_ids:
             videos_response = youtube.videos().list(
                 part='statistics',
                 id=','.join(video_ids)
             ).execute()
             
-            avg_views = sum(int(v['statistics'].get('viewCount', 0)) 
-                          for v in videos_response['items']) / len(videos_response['items'])
-        else:
-            avg_views = 0
-        
-        # Calculate metrics
-        competition = "Low" if total_results < 1000 else "Medium" if total_results < 10000 else "High"
-        score = calculate_keyword_score(avg_views, total_results)
-        
-        return {
-            'score': score,
-            'competition': competition,
-            'monthly_searches': estimate_monthly_searches(total_results),
-            'total_videos': total_results
-        }
-        
+            # Calculate average views and engagement
+            views = []
+            likes = []
+            for video in videos_response['items']:
+                stats = video['statistics']
+                views.append(int(stats.get('viewCount', 0)))
+                likes.append(int(stats.get('likeCount', 0)))
+            
+            avg_views = sum(views) / len(views) if views else 0
+            engagement = sum(likes) / sum(views) if sum(views) > 0 else 0
+            
+            # Calculate keyword metrics
+            score = calculate_keyword_score(avg_views, total_results, engagement)
+            competition = get_competition_level(total_results)
+            monthly_searches = estimate_monthly_searches(total_results)
+            
+            result = {
+                'score': score,
+                'competition': competition,
+                'monthly_searches': monthly_searches,
+                'avg_views': int(avg_views),
+                'engagement_rate': f"{engagement*100:.1f}%"
+            }
+            
+            # Cache the result
+            save_to_cache(cache_key, result)
+            return result
+            
     except Exception as e:
         st.error(f"Real-time keyword analysis error: {str(e)}")
-        return {}
+        return None
+
+def calculate_keyword_score(avg_views: float, total_results: int, engagement: float) -> float:
+    """Calculate keyword potential score (0-100)"""
+    view_score = min(avg_views / 100000, 1.0) * 40  # 40% weight
+    competition_score = (1 - min(total_results / 10000, 1.0)) * 30  # 30% weight
+    engagement_score = min(engagement * 100, 1.0) * 30  # 30% weight
+    
+    return view_score + competition_score + engagement_score

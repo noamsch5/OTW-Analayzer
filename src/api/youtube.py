@@ -7,6 +7,7 @@ import streamlit as st
 import time
 import json
 from datetime import datetime, timedelta
+from src.utlis.api_key_manager import YouTubeKeyManager
 
 # Type definitions
 class TrackInfo(TypedDict):
@@ -108,19 +109,28 @@ def save_to_cache(key: str, content: Dict) -> None:
             'content': content
         }, f)
 
-def get_youtube_client() -> Optional[object]:
-    """Initialize YouTube API client."""
+# Initialize key manager
+if 'key_manager' not in st.session_state:
+    st.session_state.key_manager = YouTubeKeyManager()
+
+def get_youtube_client(units_needed: int = 100) -> Optional[object]:
+    """Get YouTube client with quota management"""
+    key_manager = st.session_state.key_manager
+    api_key = key_manager.get_active_key()
+    
+    if not api_key:
+        st.error("No available API keys")
+        return None
+        
     try:
-        api_key = st.secrets["YOUTUBE_API_KEY"]
-        if not api_key:
-            logger.error("YouTube API key not found in environment variables")
-            return None
-        return build('youtube', 'v3', developerKey=api_key)
+        youtube = build('youtube', 'v3', developerKey=api_key)
+        key_manager.increment_usage(api_key, units_needed)
+        return youtube
     except Exception as e:
-        logger.error(f"Failed to initialize YouTube client: {str(e)}")
+        st.error(f"YouTube API error: {str(e)}")
         return None
 
-def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
+def find_similar_tracks(genre: str, track_features: Dict) -> List<Dict]:
     """Find similar tracks from top EDM channels"""
     try:
         # Check cache first
@@ -204,17 +214,17 @@ def is_valid_track(video: Dict, search_result: Dict) -> bool:
     return True
 
 def analyze_keyword_realtime(keyword: str) -> Optional[Dict]:
-    """Analyze a single keyword in real-time"""
+    """Analyze keyword with quota management"""
     try:
         # Check cache first
         cache_key = f"keyword_{keyword}"
         cached_data = get_cached_data(cache_key)
         if cached_data:
             return cached_data
-
-        youtube = get_youtube_client()
+            
+        youtube = get_youtube_client(units_needed=100)
         if not youtube:
-            raise Exception("Failed to initialize YouTube client")
+            return None
 
         # Search for videos with this keyword
         search_response = youtube.search().list(

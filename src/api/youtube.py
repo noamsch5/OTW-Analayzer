@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 import logging
 from typing import List, Dict, Optional, TypedDict
 import streamlit as st
-from ..utlis.cache_drcorator import cache_result
-from ..utlis.api_key_manager import YouTubeKeyManager
+from ..utils.cache_manager import cache_result
+from ..utils.key_manager import YouTubeKeyManager
 
 # Type definitions
 class TrackInfo(TypedDict):

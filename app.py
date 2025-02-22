@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import logging
-from src.api.youtube import find_similar_tracks
+from src.api.youtube import find_similar_tracks, analyze_keyword_realtime, get_youtube_client
 from src.api.youtube_seo import generate_seo_tags
 from src.api.keyword_analyzer import analyze_keywords
 from src.Audio.analyzer import analyze_audio

@@ -117,6 +117,26 @@ def main():
                         st.write("### 🖼️ Thumbnail Tips")
                         for tip in seo_data["thumbnail_tips"]:
                             st.write(f"• {tip}")
+                    
+                    # Add real-time keyword analyzer
+                    st.write("### 🔍 Analyze Custom Keywords")
+                    custom_keyword = st.text_input("Enter keyword to analyze:", 
+                                                 help="Type a keyword and see real-time metrics")
+                    
+                    if custom_keyword:
+                        with st.spinner("Analyzing keyword..."):
+                            keyword_metrics = analyze_keyword_realtime(custom_keyword)
+                            
+                            if keyword_metrics:
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    score_color = "green" if keyword_metrics['score'] > 70 else "orange" if keyword_metrics['score'] > 40 else "red"
+                                    st.markdown(f"Score: <span style='color:{score_color}'>{keyword_metrics['score']:.1f}</span>", 
+                                              unsafe_allow_html=True)
+                                with col2:
+                                    st.write(f"Competition: {keyword_metrics['competition']}")
+                                with col3:
+                                    st.write(f"Monthly Searches: {keyword_metrics['monthly_searches']}")
                 
                 with tab4:
                     st.subheader("🎯 Keyword Analysis")

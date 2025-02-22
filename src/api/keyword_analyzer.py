@@ -1,6 +1,7 @@
 from googleapiclient.discovery import build
 import streamlit as st
 from typing import Dict, List
+import asyncio
 import time
 
 # Define EDM Labels dictionary
@@ -136,3 +137,47 @@ def sort_keywords(keyword_stats: Dict) -> Dict:
         key=lambda x: x[1]['score'],
         reverse=True
     ))
+
+async def analyze_keyword_realtime(keyword: str) -> Dict:
+    """Analyze keyword in real-time"""
+    try:
+        youtube = build('youtube', 'v3', developerKey=st.secrets["YOUTUBE_API_KEY"])
+        
+        # Search for the keyword
+        search_response = youtube.search().list(
+            q=keyword,
+            part='snippet',
+            type='video',
+            videoCategoryId='10',
+            maxResults=5
+        ).execute()
+        
+        total_results = search_response['pageInfo']['totalResults']
+        
+        # Get video stats
+        if search_response['items']:
+            video_ids = [item['id']['videoId'] for item in search_response['items']]
+            videos_response = youtube.videos().list(
+                part='statistics',
+                id=','.join(video_ids)
+            ).execute()
+            
+            avg_views = sum(int(v['statistics'].get('viewCount', 0)) 
+                          for v in videos_response['items']) / len(videos_response['items'])
+        else:
+            avg_views = 0
+        
+        # Calculate metrics
+        competition = "Low" if total_results < 1000 else "Medium" if total_results < 10000 else "High"
+        score = calculate_keyword_score(avg_views, total_results)
+        
+        return {
+            'score': score,
+            'competition': competition,
+            'monthly_searches': estimate_monthly_searches(total_results),
+            'total_videos': total_results
+        }
+        
+    except Exception as e:
+        st.error(f"Real-time keyword analysis error: {str(e)}")
+        return {}

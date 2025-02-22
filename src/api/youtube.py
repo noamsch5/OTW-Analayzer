@@ -54,6 +54,29 @@ EDM_LABELS = {
     ]
 }
 
+EDM_CHANNELS = {
+    "Future House": [
+        "UCXvSeBDvzmPO05k-0RyB34g",  # Future House Music
+        "UC3xS7KD-nL8tXwxBnbUYzBQ",  # Spinnin' Records
+        "UC7BXWSDNQHwadVg6FJzFdqQ",  # Musical Freedom
+    ],
+    "Tech House": [
+        "UC_kRDKYrUlrbtrSiyu5Tflg",  # Insomniac Records
+        "UCu0qfYgxEiWHWUT5UNPVPoQ",  # Night Bass
+        "UC9DunKv-AYe4mqTYWWeCOYg",  # Confession
+    ],
+    "Bass House": [
+        "UCu0qfYgxEiWHWUT5UNPVPoQ",  # Night Bass
+        "UC_kRDKYrUlrbtrSiyu5Tflg",  # Insomniac Records
+        "UCgeRr_n3GuhMTnKh1HFhgQA",  # Bite This
+    ],
+    "Progressive House": [
+        "UCGZXYc32ri4D0gSLPf2pZXQ",  # Anjunabeats
+        "UC7burYeHNOvYzf0A9GHJV_A",  # Protocol Recordings
+        "UC0n9KQkadSzQyeT5qR0Gwgw",  # Armada Music
+    ]
+}
+
 def get_youtube_client() -> Optional[object]:
     """Initialize YouTube API client."""
     try:
@@ -67,57 +90,67 @@ def get_youtube_client() -> Optional[object]:
         return None
 
 def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
-    """Find similar tracks from top EDM labels"""
+    """Find similar tracks from top EDM channels"""
     try:
-        youtube = get_youtube_client()
-        if not youtube:
-            return []
-        
+        # Check cache first
+        cache_key = f"similar_{genre}_{track_features['bpm']}"
+        cached_data = get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+
+        youtube = build('youtube', 'v3', developerKey=st.secrets["YOUTUBE_API_KEY"])
         all_tracks = []
         
-        # Search in relevant labels
-        labels = EDM_LABELS.get(genre, EDM_LABELS["Future House"])
-        for label in labels:
-            search_query = f"{label} {genre} {track_features['bpm']}bpm"
-            
-            search_response = youtube.search().list(
-                q=search_query,
-                part='snippet',
-                type='video',
-                videoCategoryId='10',  # Music category
-                maxResults=3,
-                order='viewCount'
-            ).execute()
-            
-            video_ids = [item['id']['videoId'] for item in search_response['items']]
-            
-            if video_ids:
-                # Get detailed video information
-                videos_response = youtube.videos().list(
-                    part='statistics,contentDetails',
-                    id=','.join(video_ids)
+        # Search in relevant channels
+        channels = EDM_CHANNELS.get(genre, EDM_CHANNELS["Future House"])
+        
+        for channel_id in channels:
+            try:
+                # Search within channel
+                search_response = youtube.search().list(
+                    channelId=channel_id,
+                    q=f"{genre} {track_features['bpm']}",
+                    part='snippet',
+                    type='video',
+                    videoCategoryId='10',
+                    maxResults=3,
+                    order='viewCount'
                 ).execute()
                 
-                # Filter and add tracks
-                for video, search_result in zip(videos_response['items'], search_response['items']):
-                    if is_valid_track(video, search_result):
+                video_ids = [item['id']['videoId'] for item in search_response['items']]
+                
+                if video_ids:
+                    # Get detailed video information
+                    videos_response = youtube.videos().list(
+                        part='statistics',
+                        id=','.join(video_ids)
+                    ).execute()
+                    
+                    # Combine search results with statistics
+                    for video, search_result in zip(videos_response['items'], search_response['items']):
                         all_tracks.append({
                             'title': search_result['snippet']['title'],
                             'channel': search_result['snippet']['channelTitle'],
                             'url': f"https://youtube.com/watch?v={video['id']}",
                             'thumbnail': search_result['snippet']['thumbnails']['medium']['url'],
                             'views': int(video['statistics'].get('viewCount', 0)),
-                            'likes': int(video['statistics'].get('likeCount', 0)),
-                            'label': label
+                            'likes': int(video['statistics'].get('likeCount', 0))
                         })
-            
-            time.sleep(0.1)  # Respect API limits
+                
+                time.sleep(0.1)  # Respect API limits
+                
+            except Exception as e:
+                continue
         
         # Sort by views and return top 5
-        return sorted(all_tracks, key=lambda x: x['views'], reverse=True)[:5]
+        similar_tracks = sorted(all_tracks, key=lambda x: x['views'], reverse=True)[:5]
+        
+        # Cache the results
+        save_to_cache(cache_key, similar_tracks)
+        return similar_tracks
         
     except Exception as e:
-        st.error(f"YouTube API error: {str(e)}")
+        st.error(f"Error finding similar tracks: {str(e)}")
         return []
 
 def is_valid_track(video: Dict, search_result: Dict) -> bool:

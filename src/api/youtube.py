@@ -35,68 +35,56 @@ def get_youtube_client() -> Optional[object]:
         return None
 
 def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
-    """Find similar tracks with enhanced matching"""
+    """Find similar professional EDM tracks"""
     try:
         youtube = get_youtube_client()
         if not youtube:
             return []
         
-        # Create targeted search query
-        search_query = (
-            f"{genre} {track_features['bpm']}bpm "
-            f"{track_features['key']} music"
-        )
+        # Create search query with verified artists
+        verified_artists = {
+            "Future House": ["Oliver Heldens", "Don Diablo", "Tchami"],
+            "Tech House": ["Fisher", "Chris Lake", "John Summit"],
+            "Bass House": ["Jauz", "AC Slater", "Joyryde"],
+            "Deep House": ["Lane 8", "Yotto", "Ben Böhmer"],
+            "Progressive House": ["Eric Prydz", "Cristoph", "Artbat"]
+        }
         
-        search_response = youtube.search().list(
-            q=search_query,
-            part='snippet',
-            maxResults=5,
-            type='video',
-            videoCategoryId='10',  # Music category
-            videoEmbeddable='true',
-            order='relevance'
-        ).execute()
+        artists = verified_artists.get(genre, [])
+        search_results = []
         
-        # Get video IDs
-        video_ids = [item['id']['videoId'] for item in search_response['items']]
+        for artist in artists:
+            query = f"{artist} {genre} {track_features['bpm']}bpm"
+            response = youtube.search().list(
+                q=query,
+                part='snippet',
+                type='video',
+                videoCategoryId='10',
+                maxResults=3,
+                videoEmbeddable='true'
+            ).execute()
+            
+            video_ids = [item['id']['videoId'] for item in response['items']]
+            
+            # Get detailed video information
+            videos = youtube.videos().list(
+                part='statistics,contentDetails',
+                id=','.join(video_ids)
+            ).execute()
+            
+            for video, search_result in zip(videos['items'], response['items']):
+                if int(video['statistics'].get('viewCount', 0)) > 10000:  # Filter low-quality content
+                    search_results.append({
+                        'title': search_result['snippet']['title'],
+                        'channel': search_result['snippet']['channelTitle'],
+                        'url': f"https://youtube.com/watch?v={video['id']}",
+                        'thumbnail': search_result['snippet']['thumbnails']['medium']['url'],
+                        'views': int(video['statistics'].get('viewCount', 0)),
+                        'likes': int(video['statistics'].get('likeCount', 0))
+                    })
         
-        # Get detailed video information
-        videos_response = youtube.videos().list(
-            part='statistics,contentDetails',
-            id=','.join(video_ids)
-        ).execute()
-        
-        # Combine search results with video details
-        video_details = {v['id']: v for v in videos_response['items']}
-        
-        similar_tracks = []
-        for item in search_response['items']:
-            video_id = item['id']['videoId']
-            if video_id in video_details:
-                stats = video_details[video_id]['statistics']
-                similar_tracks.append({
-                    'title': item['snippet']['title'],
-                    'channel': item['snippet']['channelTitle'],
-                    'url': f"https://youtube.com/watch?v={video_id}",
-                    'thumbnail': item['snippet']['thumbnails']['medium']['url'],
-                    'views': int(stats.get('viewCount', 0)),
-                    'likes': int(stats.get('likeCount', 0)),
-                    'engagement': calculate_engagement(stats)
-                })
-        
-        return sorted(similar_tracks, key=lambda x: x['engagement'], reverse=True)
+        return sorted(search_results, key=lambda x: x['views'], reverse=True)[:5]
         
     except Exception as e:
         st.error(f"YouTube API error: {str(e)}")
         return []
-
-def calculate_engagement(stats: Dict) -> float:
-    """Calculate engagement score"""
-    views = int(stats.get('viewCount', 0))
-    likes = int(stats.get('likeCount', 0))
-    comments = int(stats.get('commentCount', 0))
-    
-    if views == 0:
-        return 0
-        
-    return (likes + comments * 2) / views

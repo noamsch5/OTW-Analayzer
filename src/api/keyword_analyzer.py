@@ -3,6 +3,38 @@ import streamlit as st
 from typing import Dict, List
 import time
 
+# Define EDM Labels dictionary
+EDM_LABELS = {
+    "Future House": [
+        "Future House Music",
+        "Hexagon",
+        "Spinnin' Records",
+        "Musical Freedom",
+        "STMPD RCRDS"
+    ],
+    "Tech House": [
+        "FISHER",
+        "Insomniac Records",
+        "Night Bass",
+        "Confession",
+        "Repopulate Mars"
+    ],
+    "Bass House": [
+        "Night Bass",
+        "Confession",
+        "Bite This!",
+        "Monstercat",
+        "Dim Mak"
+    ],
+    "Progressive House": [
+        "Anjunabeats",
+        "Protocol Recordings",
+        "Armada Music",
+        "Size Records",
+        "Axtone"
+    ]
+}
+
 def analyze_keywords(genre: str, track_features: Dict) -> Dict:
     """Analyze successful EDM track keywords"""
     try:

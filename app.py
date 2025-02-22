@@ -18,8 +18,19 @@ def process_audio_file(file):
         with open("temp.wav", "wb") as f:
             f.write(file.getbuffer())
         
-        # Analyze audio
-        audio_features = analyze_audio("temp.wav")
+        # Analyze audio with error handling
+        try:
+            audio_features = analyze_audio("temp.wav")
+            logger.info("Audio analysis completed successfully")
+        except Exception as e:
+            logger.error(f"Audio analysis failed: {str(e)}")
+            st.warning("Audio analysis encountered issues. Using default values.")
+            audio_features = {
+                "bpm": "128",
+                "key": "C Major",
+                "energy": "Medium",
+                "genre": "House"
+            }
         
         # Combine with file info
         track_features = {
@@ -27,11 +38,11 @@ def process_audio_file(file):
             **audio_features
         }
         
-        logger.info(f"Audio analysis complete: {track_features}")
         return track_features
         
     except Exception as e:
         logger.error(f"Error processing audio file: {str(e)}")
+        st.error("Error processing file. Please try again.")
         raise
     finally:
         if os.path.exists("temp.wav"):

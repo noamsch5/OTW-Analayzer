@@ -64,9 +64,16 @@ def main():
                 track_features = process_audio_file(uploaded_file)
                 genre = track_features["genre"]
                 
-                # Analyze keywords
+                # Add API quota warning
+                st.info("Note: Some features might use cached data due to API limitations")
+                
+                # Analyze keywords with quota handling
                 with st.spinner("Analyzing YouTube keywords..."):
-                    keyword_data = analyze_keywords(genre, track_features)
+                    try:
+                        keyword_data = analyze_keywords(genre, track_features)
+                    except Exception as e:
+                        st.warning("Using cached keyword data due to API limitations")
+                        keyword_data = get_fallback_data(genre)
                 
                 # Create tabs for different analyses
                 tab1, tab2, tab3, tab4 = st.tabs(["Analysis", "Similar Tracks", "YouTube SEO", "Keyword Rankings"])

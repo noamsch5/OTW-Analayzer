@@ -7,84 +7,81 @@ logger = logging.getLogger(__name__)
 def analyze_audio(file_path: str) -> dict:
     """Analyze audio file and extract features"""
     try:
-        # Load audio with larger duration for better analysis
-        y, sr = librosa.load(file_path, duration=120)  # Analyze first 2 minutes
+        # Load audio with higher sample rate
+        y, sr = librosa.load(file_path, duration=60, sr=44100)
         logger.info("Audio file loaded successfully")
 
-        # Enhanced BPM detection
-        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-        tempo_raw = librosa.beat.tempo(onset_envelope=onset_env, sr=sr)
+        # Improved BPM detection using multiple methods
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr, aggregate=np.median)
+        tempo_candidates = librosa.beat.tempo(onset_envelope=onset_env, sr=sr, aggregate=None)
         
-        # Refine BPM to common EDM ranges
-        tempo = round(tempo_raw[0])
-        if tempo < 100:
+        # Get the most prominent tempo
+        tempo = float(librosa.beat.tempo(onset_envelope=onset_env, sr=sr))
+        
+        # Refine BPM to common EDM ranges (115-135 BPM)
+        if tempo < 115:
             tempo *= 2
-        elif tempo > 160:
-            tempo //= 2
+        elif tempo > 135:
+            tempo /= 2
             
-        # Enhanced key detection
+        # Enhanced key detection using multiple features
         y_harmonic = librosa.effects.harmonic(y)
-        chromagram = librosa.feature.chroma_cqt(y=y_harmonic, sr=sr)
+        chromagram = librosa.feature.chroma_stft(y=y_harmonic, sr=sr, n_chroma=12)
+        chroma_vals = np.mean(chromagram, axis=1)
         
-        # Key detection using chromagram
+        # Key detection with confidence check
+        key_idx = np.argmax(chroma_vals)
+        key_confidence = chroma_vals[key_idx] / np.sum(chroma_vals)
+        
         keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-        chroma_avg = np.mean(chromagram, axis=1)
-        key_idx = np.argmax(chroma_avg)
         
-        # Determine if major or minor
-        major_profile = np.array([1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1])
-        minor_profile = np.array([1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0])
+        # Improved major/minor detection
+        major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+        minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
         
-        # Rotate profiles to match detected key
         major_profile = np.roll(major_profile, key_idx)
         minor_profile = np.roll(minor_profile, key_idx)
         
-        # Calculate correlation
-        major_corr = np.correlate(chroma_avg, major_profile)
-        minor_corr = np.correlate(chroma_avg, minor_profile)
+        major_corr = np.corrcoef(chroma_vals, major_profile)[0,1]
+        minor_corr = np.corrcoef(chroma_vals, minor_profile)[0,1]
         
-        # Determine key quality
         key_quality = "Major" if major_corr > minor_corr else "Minor"
         
-        # Calculate energy
-        rms = librosa.feature.rms(y=y)[0]
-        spectral = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-        energy_level = calculate_energy(rms, spectral)
-        
-        # Determine genre based on features
-        genre = detect_genre(tempo, energy_level, spectral)
-        
         return {
-            "bpm": str(int(tempo)),
+            "bpm": str(int(round(tempo))),
             "key": f"{keys[key_idx]} {key_quality}",
-            "energy": energy_level,
-            "genre": genre
+            "key_confidence": f"{key_confidence:.2%}",
+            "energy": calculate_energy(y),
+            "genre": detect_genre(tempo, y, sr)
         }
         
     except Exception as e:
         logger.error(f"Error in audio analysis: {str(e)}")
         raise
 
-def calculate_energy(rms: np.ndarray, spectral: np.ndarray) -> str:
-    """Calculate track energy level"""
-    rms_mean = np.mean(rms)
-    spectral_mean = np.mean(spectral)
+def calculate_energy(y: np.ndarray) -> str:
+    """Calculate track energy using multiple features"""
+    rms = librosa.feature.rms(y=y)[0]
+    spectral = librosa.feature.spectral_centroid(y=y)[0]
     
-    if rms_mean > 0.1 and spectral_mean > 2000:
+    energy_score = (np.mean(rms) * 0.6 + np.percentile(spectral, 95) / 10000 * 0.4)
+    
+    if energy_score > 0.15:
         return "High"
-    elif rms_mean > 0.05:
+    elif energy_score > 0.08:
         return "Medium"
     return "Low"
 
-def detect_genre(tempo: float, energy: str, spectral: np.ndarray) -> str:
+def detect_genre(tempo: float, y: np.ndarray, sr: int) -> str:
     """Detect EDM subgenre based on audio features"""
+    spectral = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
     spectral_mean = np.mean(spectral)
     
     if 124 <= tempo <= 128:
-        if energy == "High" and spectral_mean > 2000:
+        if calculate_energy(y) == "High" and spectral_mean > 2000:
             return "Future House"
         return "Tech House"
-    elif 128 <= tempo <= 135 and energy == "High":
+    elif 128 <= tempo <= 135 and calculate_energy(y) == "High":
         return "Bass House"
     elif 126 <= tempo <= 130:
         return "Progressive House"

@@ -5,6 +5,8 @@ import logging
 from typing import List, Dict, Optional, TypedDict
 import streamlit as st
 import time
+import json
+from datetime import datetime, timedelta
 
 # Type definitions
 class TrackInfo(TypedDict):
@@ -76,6 +78,35 @@ EDM_CHANNELS = {
         "UC0n9KQkadSzQyeT5qR0Gwgw",  # Armada Music
     ]
 }
+
+# Add cache configuration
+CACHE_DIR = "cache"
+CACHE_DURATION = timedelta(hours=24)
+
+def get_cache_path(key: str) -> str:
+    """Get cache file path for a key"""
+    if not os.path.exists(CACHE_DIR):
+        os.makedirs(CACHE_DIR)
+    return os.path.join(CACHE_DIR, f"{key.replace(' ', '_')}.json")
+
+def get_cached_data(key: str) -> Optional[Dict]:
+    """Get data from cache if valid"""
+    cache_path = get_cache_path(key)
+    if os.path.exists(cache_path):
+        with open(cache_path, 'r') as f:
+            data = json.load(f)
+            if datetime.fromisoformat(data['timestamp']) + CACHE_DURATION > datetime.now():
+                return data['content']
+    return None
+
+def save_to_cache(key: str, content: Dict) -> None:
+    """Save data to cache"""
+    cache_path = get_cache_path(key)
+    with open(cache_path, 'w') as f:
+        json.dump({
+            'timestamp': datetime.now().isoformat(),
+            'content': content
+        }, f)
 
 def get_youtube_client() -> Optional[object]:
     """Initialize YouTube API client."""
@@ -171,3 +202,88 @@ def is_valid_track(video: Dict, search_result: Dict) -> bool:
         return False
         
     return True
+
+def analyze_keyword_realtime(keyword: str) -> Optional[Dict]:
+    """Analyze a single keyword in real-time"""
+    try:
+        # Check cache first
+        cache_key = f"keyword_{keyword}"
+        cached_data = get_cached_data(cache_key)
+        if cached_data:
+            return cached_data
+
+        youtube = get_youtube_client()
+        if not youtube:
+            raise Exception("Failed to initialize YouTube client")
+
+        # Search for videos with this keyword
+        search_response = youtube.search().list(
+            q=keyword,
+            part='snippet',
+            type='video',
+            videoCategoryId='10',
+            maxResults=5,
+            regionCode='US'
+        ).execute()
+        
+        total_results = search_response['pageInfo']['totalResults']
+        
+        # Get video statistics
+        video_ids = [item['id']['videoId'] for item in search_response['items']]
+        if video_ids:
+            videos_response = youtube.videos().list(
+                part='statistics',
+                id=','.join(video_ids)
+            ).execute()
+            
+            # Calculate metrics
+            views = []
+            likes = []
+            for video in videos_response['items']:
+                stats = video['statistics']
+                views.append(int(stats.get('viewCount', 0)))
+                likes.append(int(stats.get('likeCount', 0)))
+            
+            avg_views = sum(views) / len(views) if views else 0
+            engagement = sum(likes) / sum(views) if sum(views) > 0 else 0
+            
+            result = {
+                'score': calculate_keyword_score(avg_views, total_results, engagement),
+                'competition': get_competition_level(total_results),
+                'monthly_searches': estimate_monthly_searches(total_results),
+                'avg_views': int(avg_views),
+                'engagement_rate': f"{engagement*100:.1f}%"
+            }
+            
+            # Cache the result
+            save_to_cache(cache_key, result)
+            return result
+            
+    except Exception as e:
+        st.error(f"Keyword analysis error: {str(e)}")
+        return None
+
+def calculate_keyword_score(avg_views: float, total_results: int, engagement: float) -> float:
+    """Calculate keyword potential score (0-100)"""
+    view_score = min(avg_views / 100000, 1.0) * 40
+    competition_score = (1 - min(total_results / 10000, 1.0)) * 30
+    engagement_score = min(engagement * 100, 1.0) * 30
+    return view_score + competition_score + engagement_score
+
+def get_competition_level(total_results: int) -> str:
+    """Determine keyword competition level"""
+    if total_results < 1000:
+        return "Low"
+    elif total_results < 10000:
+        return "Medium"
+    return "High"
+
+def estimate_monthly_searches(total_results: int) -> str:
+    """Estimate monthly search volume"""
+    if total_results < 1000:
+        return "100-1K"
+    elif total_results < 10000:
+        return "1K-10K"
+    elif total_results < 100000:
+        return "10K-100K"
+    return "100K+"

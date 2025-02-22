@@ -8,6 +8,7 @@ import time
 import json
 from datetime import datetime, timedelta
 from src.utlis.api_key_manager import YouTubeKeyManager
+from src.utlis.cache_decorator import cache_result
 
 # Type definitions
 class TrackInfo(TypedDict):
@@ -136,7 +137,7 @@ def find_similar_tracks(genre: str, track_features: Dict) -> List<Dict]:
         # Check cache first
         cache_key = f"similar_{genre}_{track_features['bpm']}"
         cached_data = get_cached_data(cache_key)
-        if cached_data:
+        if (cached_data):
             return cached_data
 
         youtube = build('youtube', 'v3', developerKey=st.secrets["YOUTUBE_API_KEY"])
@@ -213,6 +214,7 @@ def is_valid_track(video: Dict, search_result: Dict) -> bool:
         
     return True
 
+@cache_result(cache_duration=timedelta(hours=24))
 def analyze_keyword_realtime(keyword: str) -> Optional[Dict]:
     """Analyze keyword with quota management"""
     try:

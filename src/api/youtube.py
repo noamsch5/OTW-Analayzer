@@ -117,13 +117,12 @@ def get_youtube_client() -> Optional[object]:
         return None
 
 def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
-    """Find similar tracks from top EDM channels"""
+    """Find similar tracks from top EDM channels and labels"""
     try:
-        # Use more specific cache key including BPM range
         bpm = int(track_features.get('bpm', 128))
-        bpm_range = f"{bpm-5}-{bpm+5}"
-        cache_key = f"similar_{genre}_{bpm_range}"
+        cache_key = f"similar_{genre}_{bpm}"
         
+        # Try cache first
         cached_data = get_cached_data(cache_key)
         if cached_data:
             logger.info("Returning cached similar tracks")
@@ -131,18 +130,20 @@ def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
 
         youtube = get_youtube_client()
         if not youtube:
-            logger.error("YouTube client initialization failed")
             return []
         
         all_tracks = []
-        # Try channels first, then labels if no results
-        channels = EDM_CHANNELS.get(genre, EDM_CHANNELS["Future House"])
         
-        for channel_id in channels[:2]:  # Limit to 2 channels to save quota
+        # Try searching by channel first
+        channels = EDM_CHANNELS.get(genre, EDM_CHANNELS["Future House"])
+        labels = EDM_LABELS.get(genre, EDM_LABELS["Future House"])
+        
+        # First attempt: Search by channel
+        for channel_id in channels[:1]:  # Try just one channel first to save quota
             try:
                 search_response = youtube.search().list(
                     channelId=channel_id,
-                    q=f"{genre} {bpm} bpm",
+                    q=f"{genre}",  # Simplified search query
                     part='snippet',
                     type='video',
                     videoCategoryId='10',
@@ -150,53 +151,72 @@ def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
                     order='viewCount'
                 ).execute()
                 
-                video_ids = [item['id']['videoId'] for item in search_response['items']]
-                
-                if video_ids:
-                    videos_response = youtube.videos().list(
-                        part='statistics',
-                        id=','.join(video_ids)
-                    ).execute()
-                    
-                    for video, search_result in zip(videos_response['items'], search_response['items']):
-                        all_tracks.append({
-                            'title': search_result['snippet']['title'],
-                            'channel': search_result['snippet']['channelTitle'],
-                            'url': f"https://youtube.com/watch?v={video['id']}",
-                            'thumbnail': search_result['snippet']['thumbnails']['medium']['url'],
-                            'views': int(video['statistics'].get('viewCount', 0)),
-                            'likes': int(video['statistics'].get('likeCount', 0))
-                        })
-                
-                time.sleep(0.1)  # Respect API limits
+                for item in search_response.get('items', []):
+                    track = {
+                        'title': item['snippet']['title'],
+                        'channel': item['snippet']['channelTitle'],
+                        'url': f"https://youtube.com/watch?v={item['id']['videoId']}",
+                        'thumbnail': item['snippet']['thumbnails']['medium']['url']
+                    }
+                    all_tracks.append(track)
                 
             except Exception as e:
-                logger.error(f"Error searching channel {channel_id}: {str(e)}")
-                continue
+                logger.warning(f"Channel search failed, trying labels: {str(e)}")
         
-        if not all_tracks:  # Fallback to cached results if available
-            logger.warning("No tracks found, checking backup cache")
-            backup_cache = get_cached_data(f"similar_{genre}_backup")
-            if backup_cache:
-                return backup_cache
-            return []
+        # If channel search didn't yield enough results, try labels
+        if len(all_tracks) < 3:
+            for label in labels[:2]:  # Try just two labels to save quota
+                try:
+                    search_response = youtube.search().list(
+                        q=f"{label} {genre}",
+                        part='snippet',
+                        type='video',
+                        videoCategoryId='10',
+                        maxResults=2,
+                        order='viewCount'
+                    ).execute()
+                    
+                    for item in search_response.get('items', []):
+                        track = {
+                            'title': item['snippet']['title'],
+                            'channel': item['snippet']['channelTitle'],
+                            'url': f"https://youtube.com/watch?v={item['id']['videoId']}",
+                            'thumbnail': item['snippet']['thumbnails']['medium']['url']
+                        }
+                        all_tracks.append(track)
+                        
+                except Exception:
+                    continue
+                
+                time.sleep(0.1)  # Respect API limits
         
-        # Sort by views and return top 5
-        similar_tracks = sorted(all_tracks, key=lambda x: x['views'], reverse=True)[:5]
+        if not all_tracks:
+            return get_fallback_tracks(genre)
         
-        # Save to both specific and backup cache
+        # Take top 5 unique tracks
+        seen = set()
+        unique_tracks = []
+        for track in all_tracks:
+            if track['title'] not in seen:
+                seen.add(track['title'])
+                unique_tracks.append(track)
+        
+        similar_tracks = unique_tracks[:5]
         save_to_cache(cache_key, similar_tracks)
-        save_to_cache(f"similar_{genre}_backup", similar_tracks)
-        
         return similar_tracks
         
     except Exception as e:
         logger.error(f"Error finding similar tracks: {str(e)}")
-        # Try to return backup cache
-        backup_cache = get_cached_data(f"similar_{genre}_backup")
-        if backup_cache:
-            return backup_cache
-        return []
+        return get_fallback_tracks(genre)
+
+def get_fallback_tracks(genre: str) -> List<Dict]:
+    """Get fallback tracks when API fails"""
+    return [{
+        'title': f'Example {genre} Track {i}',
+        'channel': 'Sample Channel',
+        'url': '#',
+        'thumbnail': 'https://via.placeholder.com/120x90.png',
+    } for i in range(1, 6)]
 
 def is_valid_track(video: Dict, search_result: Dict) -> bool:
     """Validate if the track meets quality criteria"""

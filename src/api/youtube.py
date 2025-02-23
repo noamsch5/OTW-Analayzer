@@ -20,8 +20,6 @@ class VideoDetails(TypedDict):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
 
 def get_youtube_client() -> Optional[object]:
     """

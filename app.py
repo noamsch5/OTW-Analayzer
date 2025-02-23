@@ -49,12 +49,12 @@ def process_audio_file(file):
             os.remove("temp.wav")
 
 def main():
-    st.set_page_config(page_title="OTW Analayzer", page_icon="🎵", layout="wide")
+    st.set_page_config(page_title="OTW Analyzer", page_icon="🎵", layout="wide")
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.title("🎵 OTW Analayzer")
+        st.title("🎵 OTW Analyzer")
         st.subheader("EDM Track Analysis & YouTube Optimization")
         
         uploaded_file = st.file_uploader("Drop your track here", type=['wav'])

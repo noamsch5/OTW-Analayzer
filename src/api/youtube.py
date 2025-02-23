@@ -4,9 +4,8 @@ import logging
 from typing import List, Dict, Optional, TypedDict
 import streamlit as st
 import json
+import time
 from datetime import datetime, timedelta
-from src.utlis.api_key_manager import YouTubeKeyManager
-from src.utlis.cache_decorator import cache_result
 
 # Type definitions and configuration
 class TrackInfo(TypedDict):
@@ -23,9 +22,6 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR = "cache"
 CACHE_DURATION = timedelta(hours=24)
-
-# Load environment variables
-load_dotenv()
 
 EDM_LABELS = {
     "Future House": [
@@ -107,48 +103,40 @@ def save_to_cache(key: str, content: Dict) -> None:
             'content': content
         }, f)
 
-# Initialize key manager
-if 'key_manager' not in st.session_state:
-    st.session_state.key_manager = YouTubeKeyManager()
-
-def get_youtube_client(units_needed: int = 100) -> Optional[object]:
-    """Get YouTube client with quota management"""
-    key_manager = st.session_state.key_manager
-    api_key = key_manager.get_active_key()
-    
+def get_youtube_client() -> Optional[object]:
+    """Get YouTube client with API key"""
+    api_key = st.secrets.get("YOUTUBE_API_KEY")
     if not api_key:
-        st.error("No available API keys")
+        st.error("YouTube API key not found in Streamlit secrets")
         return None
-        
+    
     try:
-        youtube = build('youtube', 'v3', developerKey=api_key)
-        key_manager.increment_usage(api_key, units_needed)
-        return youtube
+        return build('youtube', 'v3', developerKey=api_key)
     except Exception as e:
-        st.error(f"YouTube API error: {str(e)}")
+        logger.error(f"Error initializing YouTube client: {str(e)}")
         return None
 
-def find_similar_tracks(genre: str, track_features: Dict) -> List<Dict]:
+def find_similar_tracks(genre: str, track_features: Dict) -> List[Dict]:
     """Find similar tracks from top EDM channels"""
     try:
         # Check cache first
         cache_key = f"similar_{genre}_{track_features['bpm']}"
         cached_data = get_cached_data(cache_key)
-        if (cached_data):
+        if cached_data:
             return cached_data
 
-        youtube = build('youtube', 'v3', developerKey=st.secrets["YOUTUBE_API_KEY"])
+        youtube = get_youtube_client()
+        if not youtube:
+            return []
+        
         all_tracks = []
+        labels = EDM_LABELS.get(genre, EDM_LABELS["Future House"])
         
-        # Search in relevant channels
-        channels = EDM_CHANNELS.get(genre, EDM_CHANNELS["Future House"])
-        
-        for channel_id in channels:
+        for label in labels:
             try:
-                # Search within channel
+                # Search by label and genre
                 search_response = youtube.search().list(
-                    channelId=channel_id,
-                    q=f"{genre} {track_features['bpm']}",
+                    q=f"{label} {genre} {track_features['bpm']} bpm",
                     part='snippet',
                     type='video',
                     videoCategoryId='10',
@@ -159,37 +147,35 @@ def find_similar_tracks(genre: str, track_features: Dict) -> List<Dict]:
                 video_ids = [item['id']['videoId'] for item in search_response['items']]
                 
                 if video_ids:
-                    # Get detailed video information
                     videos_response = youtube.videos().list(
                         part='statistics',
                         id=','.join(video_ids)
                     ).execute()
                     
-                    # Combine search results with statistics
                     for video, search_result in zip(videos_response['items'], search_response['items']):
-                        all_tracks.append({
-                            'title': search_result['snippet']['title'],
-                            'channel': search_result['snippet']['channelTitle'],
-                            'url': f"https://youtube.com/watch?v={video['id']}",
-                            'thumbnail': search_result['snippet']['thumbnails']['medium']['url'],
-                            'views': int(video['statistics'].get('viewCount', 0)),
-                            'likes': int(video['statistics'].get('likeCount', 0))
-                        })
+                        if is_valid_track(video, search_result):
+                            all_tracks.append({
+                                'title': search_result['snippet']['title'],
+                                'channel': search_result['snippet']['channelTitle'],
+                                'url': f"https://youtube.com/watch?v={video['id']}",
+                                'thumbnail': search_result['snippet']['thumbnails']['medium']['url'],
+                                'views': int(video['statistics'].get('viewCount', 0)),
+                                'likes': int(video['statistics'].get('likeCount', 0))
+                            })
                 
                 time.sleep(0.1)  # Respect API limits
                 
             except Exception as e:
+                logger.error(f"Error searching label {label}: {str(e)}")
                 continue
         
         # Sort by views and return top 5
         similar_tracks = sorted(all_tracks, key=lambda x: x['views'], reverse=True)[:5]
-        
-        # Cache the results
         save_to_cache(cache_key, similar_tracks)
         return similar_tracks
         
     except Exception as e:
-        st.error(f"Error finding similar tracks: {str(e)}")
+        logger.error(f"Error finding similar tracks: {str(e)}")
         return []
 
 def is_valid_track(video: Dict, search_result: Dict) -> bool:
@@ -211,21 +197,18 @@ def is_valid_track(video: Dict, search_result: Dict) -> bool:
         
     return True
 
-@cache_result(cache_duration=timedelta(hours=24))
 def analyze_keyword_realtime(keyword: str) -> Optional[Dict]:
-    """Analyze keyword with quota management"""
+    """Analyze keyword with caching"""
     try:
-        # Check cache first
         cache_key = f"keyword_{keyword}"
         cached_data = get_cached_data(cache_key)
         if cached_data:
             return cached_data
-            
-        youtube = get_youtube_client(units_needed=100)
+
+        youtube = get_youtube_client()
         if not youtube:
             return None
 
-        # Search for videos with this keyword
         search_response = youtube.search().list(
             q=keyword,
             part='snippet',
@@ -234,50 +217,46 @@ def analyze_keyword_realtime(keyword: str) -> Optional[Dict]:
             maxResults=5,
             regionCode='US'
         ).execute()
-        
-        total_results = search_response['pageInfo']['totalResults']
-        
-        # Get video statistics
-        video_ids = [item['id']['videoId'] for item in search_response['items']]
-        if video_ids:
-            videos_response = youtube.videos().list(
-                part='statistics',
-                id=','.join(video_ids)
-            ).execute()
-            
-            # Calculate metrics
-            views = []
-            likes = []
-            for video in videos_response['items']:
-                stats = video['statistics']
-                views.append(int(stats.get('viewCount', 0)))
-                likes.append(int(stats.get('likeCount', 0)))
-            
-            avg_views = sum(views) / len(views) if views else 0
-            engagement = sum(likes) / sum(views) if sum(views) > 0 else 0
-            
-            result = {
-                'score': calculate_keyword_score(avg_views, total_results, engagement),
-                'competition': get_competition_level(total_results),
-                'monthly_searches': estimate_monthly_searches(total_results),
-                'avg_views': int(avg_views),
-                'engagement_rate': f"{engagement*100:.1f}%"
-            }
-            
-            # Cache the result
-            save_to_cache(cache_key, result)
-            return result
-            
-    except Exception as e:
-        st.error(f"Keyword analysis error: {str(e)}")
-        return None
 
-def calculate_keyword_score(avg_views: float, total_results: int, engagement: float) -> float:
+        result = {
+            'score': calculate_keyword_score(search_response),
+            'competition': get_competition_level(search_response['pageInfo']['totalResults']),
+            'monthly_searches': estimate_monthly_searches(search_response['pageInfo']['totalResults']),
+            'suggestions': get_keyword_suggestions(keyword, youtube)
+        }
+
+        save_to_cache(cache_key, result)
+        return result
+
+    except Exception as e:
+        logger.error(f"Keyword analysis error: {str(e)}")
+        return get_fallback_data()
+
+def calculate_keyword_score(search_response: Dict) -> float:
     """Calculate keyword potential score (0-100)"""
-    view_score = min(avg_views / 100000, 1.0) * 40
-    competition_score = (1 - min(total_results / 10000, 1.0)) * 30
-    engagement_score = min(engagement * 100, 1.0) * 30
-    return view_score + competition_score + engagement_score
+    total_results = search_response['pageInfo']['totalResults']
+    video_ids = [item['id']['videoId'] for item in search_response['items']]
+    if video_ids:
+        videos_response = youtube.videos().list(
+            part='statistics',
+            id=','.join(video_ids)
+        ).execute()
+        
+        views = []
+        likes = []
+        for video in videos_response['items']:
+            stats = video['statistics']
+            views.append(int(stats.get('viewCount', 0)))
+            likes.append(int(stats.get('likeCount', 0)))
+        
+        avg_views = sum(views) / len(views) if views else 0
+        engagement = sum(likes) / sum(views) if sum(views) > 0 else 0
+        
+        view_score = min(avg_views / 100000, 1.0) * 40
+        competition_score = (1 - min(total_results / 10000, 1.0)) * 30
+        engagement_score = min(engagement * 100, 1.0) * 30
+        return view_score + competition_score + engagement_score
+    return 0
 
 def get_competition_level(total_results: int) -> str:
     """Determine keyword competition level"""
@@ -296,3 +275,34 @@ def estimate_monthly_searches(total_results: int) -> str:
     elif total_results < 100000:
         return "10K-100K"
     return "100K+"
+
+def get_keyword_suggestions(keyword: str, youtube) -> List[str]:
+    """Get related keyword suggestions"""
+    try:
+        response = youtube.search().list(
+            q=keyword,
+            part='snippet',
+            type='video',
+            maxResults=10,
+            videoCategoryId='10'
+        ).execute()
+        
+        suggestions = set()
+        for item in response.get('items', []):
+            title = item['snippet']['title'].lower()
+            words = title.split()
+            if len(words) > 2:
+                suggestions.add(' '.join(words[:3]))
+        
+        return list(suggestions)[:5]
+    except Exception:
+        return []
+
+def get_fallback_data() -> Dict:
+    """Provide fallback data when API is unavailable"""
+    return {
+        'score': 50,
+        'competition': 'Medium',
+        'monthly_searches': '1K-10K',
+        'suggestions': []
+    }

@@ -346,3 +346,8 @@ def get_fallback_data() -> Dict:
         'monthly_searches': '1K-10K',
         'suggestions': []
     }
+
+def handle_quota_error(e: Exception) -> bool:
+    """Check if error is due to quota exceeded"""
+    error_message = str(e).lower()
+    return 'quota' in error_message or 'rate limit' in error_message

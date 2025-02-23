@@ -14,6 +14,10 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Check for API keys
+if not st.secrets.get("YOUTUBE_API_KEY") and not st.secrets.get("YOUTUBE_API_KEYS"):
+    st.error("YouTube API key not found. Please add it to your .streamlit/secrets.toml file")
+
 def process_audio_file(file):
     """Process uploaded audio file and extract features"""
     try:

@@ -1,6 +1,5 @@
 from googleapiclient.discovery import build
 import os
-from dotenv import load_dotenv
 import logging
 from typing import List, Dict, Optional, TypedDict
 import streamlit as st
@@ -23,8 +22,7 @@ class VideoDetails(TypedDict):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+
 
 # Cache configuration
 CACHE_DIR = "cache"

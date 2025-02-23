@@ -6,6 +6,11 @@ from src.api.youtube_seo import generate_seo_tags
 from src.api.keyword_analyzer import analyze_keywords, get_fallback_data
 from src.Audio.analyzer import analyze_audio
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 
 
 # Configure logging

@@ -67,99 +67,14 @@ def save_to_cache(key: str, content: Dict) -> None:
             'content': content
         }, f)
 
-def analyze_keywords(genre: str, track_features: Dict) -> Dict:
-    """Analyze keywords with caching"""
-    try:
-        cache_key = f"{genre}_{track_features['bpm']}_{track_features['key']}"
-        cached_data = get_cached_data(cache_key)
-        
-        if cached_data:
-            return cached_data
-            
-        # If not in cache, proceed with API call
-        youtube = build('youtube', 'v3', developerKey=st.secrets["YOUTUBE_API_KEY"])
-        
-        # Generate EDM-specific keywords
-        base_keywords = [
-            f"{genre}",
-            f"{genre} {track_features['bpm']}bpm",
-            f"{genre} {track_features['key']}",
-            f"new {genre} 2024",
-            f"{genre} official music",
-            f"{genre} release",
-            f"best {genre}",
-            f"{genre} edm"
-        ]
-        
-        # Add label-specific keywords
-        for label in EDM_LABELS.get(genre, []):
-            base_keywords.append(f"{label} {genre}")
-        
-        keyword_stats = {}
-        
-        for keyword in base_keywords:
-            try:
-                search_response = youtube.search().list(
-                    q=keyword,
-                    part='snippet',
-                    type='video',
-                    videoCategoryId='10',
-                    maxResults=5
-                ).execute()
-                
-                if search_response['items']:
-                    # Analyze top performing videos
-                    video_ids = [item['id']['videoId'] for item in search_response['items']]
-                    videos_response = youtube.videos().list(
-                        part='statistics',
-                        id=','.join(video_ids)
-                    ).execute()
-                    
-                    avg_views = calculate_avg_views(videos_response['items'])
-                    competition = analyze_competition(videos_response['items'])
-                    
-                    keyword_stats[keyword] = {
-                        'score': calculate_keyword_score(avg_views, competition),
-                        'competition': competition,
-                        'monthly_searches': estimate_searches(avg_views),
-                        'avg_views': avg_views
-                    }
-                
-                time.sleep(0.1)
-                
-            except Exception as e:
-                if "quota" in str(e):
-                    # Use cached data if available
-                    if cached_data:
-                        return cached_data
-                    # Fallback data if no cache
-                    keyword_stats[keyword] = {
-                        'score': 0.5,
-                        'competition': "Medium",
-                        'monthly_searches': "1K-10K"
-                    }
-        
-        # Save results to cache
-        save_to_cache(cache_key, keyword_stats)
-        return keyword_stats
-        
-    except Exception as e:
-        st.warning("Using cached or estimated data due to API limitations")
-        return get_fallback_data(genre)
+def analyze_keywords(genre: str, track_features: dict) -> dict:
+    return {}
 
-def get_fallback_data(genre: str) -> Dict:
-    """Provide fallback data when API is unavailable"""
+def get_fallback_data() -> dict:
     return {
-        f"{genre}": {
-            'score': 0.7,
-            'competition': "Medium",
-            'monthly_searches': "1K-10K"
-        },
-        f"new {genre} 2024": {
-            'score': 0.8,
-            'competition': "Low",
-            'monthly_searches': "100-1K"
-        }
+        "score": 50,
+        "competition": "Medium",
+        "monthly_searches": "1K-10K"
     }
 
 def calculate_avg_views(videos: List[Dict]) -> int:

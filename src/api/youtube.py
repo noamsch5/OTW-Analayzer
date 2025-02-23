@@ -5,8 +5,8 @@ from typing import List, Dict, Optional, TypedDict
 import streamlit as st
 import json
 from datetime import datetime, timedelta
-from src.utils.api_key_manager import YouTubeKeyManager
-from src.utils.cache_decorator import cache_result
+from src.utlis.api_key_manager import YouTubeKeyManager
+from src.utlis.cache_decorator import cache_result
 
 # Type definitions and configuration
 class TrackInfo(TypedDict):
